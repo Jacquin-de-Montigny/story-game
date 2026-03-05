@@ -70,6 +70,7 @@
         .map-cell.forest { background: var(--forest); }
         .map-cell.village { background: var(--village); }
         .map-cell.water { background: var(--water); }
+        .map-cell.mountain { background: #8B7355; }
         .map-cell.hidden { opacity: 0; }
 
         /* --- UI ELEMENTS --- */
@@ -167,26 +168,34 @@
             { id: "treasure", text: "Find and open the Treasure Chest", status: "hidden" },
             { id: "bartender", text: "Help the Bartender", status: "hidden" }
         ],
-        worldEvents: { barrelOpen: false, elderSpoken: false, wellUnlocked: false, treasureFound: false },
+        worldEvents: { barrelOpen: false, elderSpoken: false, wellUnlocked: false, treasureFound: false, crateOpen: false, aleDelivered: false, rubbleCleared: false },
+        awaitingConfirmation: null,
+        devMode: false,
+        awaitingDevCode: false,
         treasure: '3,2,0',
         loot: ["Gold Coins", "Ancient Artifact", "Jeweled Ring", "Old Scroll", "Glowing Crystal"],
+        coins: 0,
         shopsAreGnomes: false,
         shops: {
             '0,2,-1': { // Armory
-                "Iron Breastplate": { price: 1, desc: "Sturdy armor forged by gnomish smiths" },
-                "Reinforced Shield": { price: 1, desc: "A heavy shield with brass fittings" }
+                "Iron Breastplate": { price: 100, desc: "Sturdy armor forged by gnomish smiths" },
+                "Reinforced Shield": { price: 75, desc: "A heavy shield with brass fittings" }
             },
-            '1,1,-1': { // Magic
-                "Mystic Rune": { price: 2, desc: "Grants luck and protection" },
-                "Glowing Crystal": { price: 2, desc: "A focus for simple spells" }
-            },
-            '1,2,-1': { // General / Curios (entrance)
-                "Healing Potion": { price: 1, desc: "Restores vitality and mends wounds" },
-                "Old Scroll": { price: 1, desc: "A crumbling page with odd symbols" }
+            '1,1,-1': { // Weapons & Tools
+                "Iron Sword": { price: 80, desc: "A sturdy blade forged by gnomish smiths" },
+                "Pickaxe": { price: 60, desc: "A heavy tool for breaking stone and ore" }
             },
             '2,2,-1': { // Potions
-                "Greater Healing Potion": { price: 2, desc: "Stronger restorative draught" },
-                "Antitoxin": { price: 1, desc: "Cures minor poisons" }
+                "Greater Healing Potion": { price: 100, desc: "Stronger restorative draught" },
+                "Antitoxin": { price: 50, desc: "Cures minor poisons" }
+            }
+        },
+        sellers: {
+            '1,3,-1': {
+                "Ancient Artifact": 50,
+                "Jeweled Ring": 75,
+                "Old Scroll": 30,
+                "Glowing Crystal": 60
             }
         }
     };
@@ -201,7 +210,7 @@
         '2,3,0': {
             name: "The Whispering Trail", type: "forest", visited: false,
             exits: { south: '2,4,0', north: '2,2,0' },
-            desc: "The trees lean inward here, their branches interlocking like skeletal fingers. You feel eyes upon you, though the woods seem empty. A narrow path leads deeper into the unknown. A small gnome sits on a root, humming to himself — he seems eager to talk."
+            desc: "The trees lean inward here, their branches interlocking like skeletal fingers. You feel eyes upon you, though the woods seem empty. A narrow path leads deeper into the unknown. A <b>small gnome</b> sits on a root, humming to himself — he seems eager to talk."
         },
         '2,2,0': {
             name: "Bluefinch Village Entrance", type: "village", visited: false,
@@ -215,8 +224,13 @@
         },
         '1,2,-1': {
             name: "Sunken Market Entrance", type: "water", visited: false,
-            exits: { up: '1,2,0', west: '0,2,-1', east: '2,2,-1', north: '1,1,-1', down: '1,2,-2' },
-            desc: "You have descended into the dark. The air is damp and cold. Water drips from the ceiling into a dark pool. Stairs open to a cramped market where small stalls of different trades cluster. The shopkeepers here are surprisingly small and busy."
+            exits: { up: '1,2,0', west: '0,2,-1', east: '2,2,-1', north: '1,1,-1', down: '1,2,-2', south: '1,3,-1' },
+            desc: "You have descended into the dark. The air is damp and cold. Water drips from the ceiling into a dark pool. Stairs open to a cramped market where small stalls of different trades cluster. The shopkeepers here are surprisingly small and busy. To the <b>South</b>, you hear the clink of coins—a merchant's counter."
+        },
+        '1,3,-1': {
+            name: "The Coin Exchange", type: "water", visited: false,
+            exits: { north: '1,2,-1' },
+            desc: "A small chamber with a weathered counter. Behind it sits a stern-faced gnome appraiser with a jeweler's loupe dangling from their neck. The walls are lined with small scales and valuation charts. This merchant buys rare treasures for coin."
         },
         '1,2,-2': {
             name: "Hidden Stairwell", type: "cavern", visited: false,
@@ -233,6 +247,11 @@
             exits: { north: '2,2,-2' },
             desc: "A small alcove with an old mural on the wall. A strange symbol points to somewhere deeper, but the passage is blocked by rubble."
         },
+        '2,4,-2': {
+            name: "Ancient Mine", type: "cavern", visited: false,
+            exits: { north: '2,3,-2' },
+            desc: "A long-abandoned mine shaft stretches into darkness. Rusty mining carts and broken tools litter the ground. The air is thick with dust and the faint scent of minerals. High above, you notice a hatch in the ceiling that might be reachable with one of the mining carts."
+        },
         '0,2,-1': {
             name: "Gnomish Armory", type: "shop", visited: false,
             exits: { east: '1,2,-1' },
@@ -244,29 +263,45 @@
             desc: "Row upon row of vials shimmer on shelves. A bespectacled gnome stirs a steaming cauldron."
         },
         '1,1,-1': {
-            name: "Arcane Curios", type: "shop", visited: false,
+            name: "Weapons & Tools", type: "shop", visited: false,
             exits: { south: '1,2,-1' },
-            desc: "Strange trinkets and sigils hang behind glass. A gnome in a patched robe polishes a rune-carved stone."
+            desc: "Racks of weapons and tools line the walls. A burly gnome with a leather apron sharpens a blade at the workbench."
         },
         '3,2,0': {
-            name: "Buried Treasure Site", type: "village", visited: false,
+            name: "Overgrown Knoll", type: "village", visited: false,
             exits: { west: '2,2,0', east: '4,2,0' },
-            desc: "You stand in a quiet area. The ground beneath your feet feels curious, as if something lies hidden below. The map marks this spot with an X."
+            desc: "A gentle rise in the landscape with tall grass swaying in the breeze. An old weathered stone sits near the center, worn smooth by time. Nothing particularly remarkable catches your eye."
+        },
+        '2,4,1': {
+            name: "Mountain Summit", type: "mountain", visited: false,
+            exits: { north: '2,3,1', east: '3,4,1', down: '2,4,-2' },
+            desc: "You stand atop a windswept mountain peak. The view is breathtaking - to the south you can see the distant lights of Bluefinch Village and the tavern. Fresh mountain air fills your lungs. The terrain slopes dangerously downward to the south."
+        },
+
+        '3,4,1': {
+            name: "Rocky Outcrop", type: "mountain", visited: false,
+            exits: { west: '2,4,1' },
+            desc: "A jagged outcrop of stone. Beyond it, the mountain continues eastward but the path is blocked by loose scree."
         },
         '4,2,0': {
             name: "The Drunken Finch Tavern", type: "village", visited: false,
             exits: { west: '3,2,0' },
-            desc: "Warm amber light spills out into the street. The tavern is the lifeblood of Bluefinch. A sign hangs above the door depicting a bird with a tiny mug. You can try to <b>enter tavern</b> here."
+            desc: "Warm amber light spills out into the street. The tavern is the lifeblood of Bluefinch. A sign hangs above the door depicting a bird with a tiny mug. You can try to <b>enter</b> here."
         },
         '4,2,1': {
             name: "Inside The Drunken Finch Tavern", type: "interior", visited: false,
             exits: { down: '4,2,0' },
-            desc: "You step into a low-ceilinged tavern filled with chatter and the smell of ale. A stout bartender polishes mugs behind the counter. He nods at you, waiting."
+            desc: "You step into a low-ceilinged tavern filled with chatter and the smell of ale. A <b>stout bartender</b> polishes mugs behind the counter. He nods at you, waiting."
         },
         '3,4,0': {
             name: "The Azure Brook", type: "water", visited: false,
-            exits: { west: '2,4,0' },
+            exits: { west: '2,4,0', east: '4,4,0' },
             desc: "The brook shimmers with an unnatural blue hue. The water is so clear you can see the white sand on the bottom. It feels like a place for reflection."
+        },
+        '4,4,0': {
+            name: "The Docks", type: "water", visited: false,
+            exits: { west: '3,4,0' },
+            desc: "Weathered wooden docks stretch along the water's edge. Fishing nets and barrels are stacked haphazardly. A <b>wooden crate</b> sits near the water, sealed with iron bands. The smell of salt and aged wood fills the air."
         }
     };
 
@@ -331,8 +366,9 @@
                 map.appendChild(container);
             }
         }
-        document.getElementById('location-name').innerText = world[`${state.x},${state.y},${state.z}`]?.name.toUpperCase() || "THE UNKNOWN";
-        document.getElementById('inv-list').innerHTML = state.inv.map(i => `<li>• ${i}</li>`).join('');
+        const locationName = world[`${state.x},${state.y},${state.z}`]?.name.toUpperCase() || "THE UNKNOWN";
+        document.getElementById('location-name').innerHTML = `${locationName}<br><span style="font-size:0.7rem; color:#666; margin-top:8px; display:block;">💰 ${state.coins} coins</span>`;
+        document.getElementById('inv-list').innerHTML = state.inv.filter(i => i !== "Gold Coins").map(i => `<li>• ${i}</li>`).join('');
     }
 
     function drawPath(parent, cls, t, l /*, ty, tx */) {
@@ -390,10 +426,38 @@
         const owner = state.shopsAreGnomes ? 'Gnome Vendor' : 'Merchant';
         let shopMsg = `<div class="help-box" style="text-align:left;"><b>${owner}'s WARES</b><br><br>`;
         Object.entries(shop).forEach(([item, data]) => {
-            shopMsg += `<b>${item}</b> - Costs: ${data.price} treasure item(s)<br><span style="color:#666;font-size:0.9rem;">${data.desc}</span><br><br>`;
+            shopMsg += `<b>${item}</b> - Costs: ${data.price} coin(s)<br><span style="color:#666;font-size:0.9rem;">${data.desc}</span><br><br>`;
         });
-        shopMsg += '<span style="color:#aaa;font-size:0.85rem;">You have <b>' + state.inv.filter(i => state.loot.includes(i)).length + '</b> treasure items. Use <b>buy [item name]</b> to purchase.</span></div>';
+        shopMsg += `<span style="color:#aaa;font-size:0.85rem;">You have <b>${state.coins}</b> coins. Use <b>buy [item name]</b> to purchase.</span></div>`;
         print(shopMsg);
+    }
+
+    function sellItem(itemName) {
+        const coord = `${state.x},${state.y},${state.z}`;
+        const seller = state.sellers[coord];
+        if (!seller) { print("There is no buyer here."); return; }
+        const itemKey = Object.keys(seller).find(k => k.toLowerCase() === itemName.toLowerCase());
+        if (!itemKey) { print(`The merchant doesn't buy "${itemName}". Try <b>sell</b> to see what's available.`); return; }
+        if (!state.inv.includes(itemKey)) {
+            print(`You don't have a <b>${itemKey}</b> to sell.`);
+            return;
+        }
+        const price = seller[itemKey];
+        state.inv = state.inv.filter(item => item !== itemKey);
+        state.coins += price;
+        print(`<span style="color:var(--accent);">✓ Sale complete!</span> You sell <b>${itemKey}</b> for <b>${price} coins</b>. Total coins: ${state.coins}.`);
+    }
+
+    function showSeller() {
+        const coord = `${state.x},${state.y},${state.z}`;
+        const seller = state.sellers[coord];
+        if (!seller) { print("There is no buyer here."); return; }
+        let sellerMsg = `<div class="help-box" style="text-align:left;"><b>APPRAISER'S BUYING PRICES</b><br><br>`;
+        Object.entries(seller).forEach(([item, price]) => {
+            sellerMsg += `<b>${item}</b> - Buys for: ${price} coin(s)<br><br>`;
+        });
+        sellerMsg += `<span style="color:#aaa;font-size:0.85rem;">You have <b>${state.coins}</b> coins. Use <b>sell [item name]</b> to sell valuables.</span></div>`;
+        print(sellerMsg);
     }
 
     function buyItem(itemName) {
@@ -402,18 +466,14 @@
         if (!shop) { print("No merchant here to sell you anything."); return; }
         const itemKey = Object.keys(shop).find(k => k.toLowerCase() === itemName.toLowerCase());
         if (!itemKey) { print(`The merchant doesn't offer "${itemName}". Try <b>shop</b> to see what's available.`); return; }
-        const treasureItems = state.inv.filter(i => state.loot.includes(i));
         const price = shop[itemKey].price;
-        if (treasureItems.length < price) {
-            print(`<b>${itemKey}</b> costs ${price} treasure item(s). You only have ${treasureItems.length}.`);
+        if (state.coins < price) {
+            print(`<b>${itemKey}</b> costs ${price} coins. You only have ${state.coins} coins.`);
             return;
         }
-        for (let i = 0; i < price; i++) {
-            const idx = state.inv.indexOf(treasureItems[0]);
-            if (idx > -1) state.inv.splice(idx, 1);
-        }
+        state.coins -= price;
         if (!state.inv.includes(itemKey)) state.inv.push(itemKey);
-        print(`<span style="color:var(--accent);">✓ Trade complete!</span> You exchange ${price} treasure item(s) for <b>${itemKey}</b>.`);
+        print(`<span style="color:var(--accent);">✓ Purchase complete!</span> You buy <b>${itemKey}</b> for ${price} coins. Coins remaining: ${state.coins}.`);
     }
 
     function handleInput(val) {
@@ -434,8 +494,52 @@
         print(`<span style="color:var(--accent)">❯ ${val}</span>`);
         const room = world[`${state.x},${state.y},${state.z}`];
 
+        // --- developer mode processing ---
+        if (state.awaitingDevCode) {
+            if (raw === '1901') {
+                state.devMode = true;
+                print("<span class='action-msg'>Developer mode activated.</span>");
+            } else {
+                print("<span class='action-msg'>Incorrect code.</span>");
+            }
+            state.awaitingDevCode = false;
+            return;
+        }
+        if (raw === '/dev') {
+            state.awaitingDevCode = true;
+            print("Enter code:");
+            return;
+        }
+        if (state.devMode) {
+            if (raw.startsWith('/give ')) {
+                const param = raw.substring(6).trim();
+                const numValue = parseInt(param);
+                
+                if (!isNaN(numValue)) {
+                    state.coins += numValue;
+                    print(`<span class='action-msg'>Gave you ${numValue} coins.</span>`);
+                } else {
+                    if (!state.inv.includes(param)) state.inv.push(param);
+                    print(`<span class='action-msg'>Gave you ${param}.</span>`);
+                }
+                return;
+            }
+            if (raw.startsWith('/tp ')) {
+                const coords = raw.substring(4).trim();
+                const parts = coords.split(',').map(n=>parseInt(n));
+                if (parts.length === 3 && parts.every(num=>!isNaN(num))) {
+                    state.x = parts[0]; state.y = parts[1]; state.z = parts[2];
+                    world[`${state.x},${state.y},${state.z}`].visited = true;
+                    look();
+                } else {
+                    print("<span class='action-msg'>Invalid teleport syntax. Use /tp x,y,z</span>");
+                }
+                return;
+            }
+        }
+
         if (raw === "!help") {
-            print(`<div class="help-box"><b>MASTER COMMAND LIST</b><br>• <b>Movement:</b> north, south, east, west, up, down<br>• <b>Interactions:</b> open barrel, talk to elder, take map, open chest, dig<br>• <b>Shopping:</b> shop, buy [item]<br>• <b>System:</b> look, map, !help</div>`);
+            print(`<div class="help-box"><b>MASTER COMMAND LIST</b><br>• <b>Movement:</b> north, south, east, west, up, down<br>• <b>Interactions:</b> open barrel, talk to elder, take map, open chest, dig, use pickaxe, use cart<br>• <b>Shopping:</b> shop, buy [item]<br>• <b>Selling:</b> sell, sell [item name], sell all<br>• <b>System:</b> look, map, !help</div>`);
         }
         else if (raw === 'shop' || raw === 'browse shop' || raw === 'talk to merchant') {
             showShop();
@@ -443,6 +547,58 @@
         else if (raw.startsWith('buy ')) {
             const itemName = raw.substring(4).trim();
             buyItem(itemName);
+        }
+        else if (raw === 'sell' || raw === 'browse' || raw === 'appraise') {
+            showSeller();
+        }
+        else if (raw === 'sell all') {
+            const coord = `${state.x},${state.y},${state.z}`;
+            const seller = state.sellers[coord];
+            if (!seller) { print("There is no buyer here."); return; }
+            
+            // Calculate total value of all sellable items
+            let totalValue = 0;
+            let itemsToSell = [];
+            Object.keys(seller).forEach(item => {
+                if (state.inv.includes(item)) {
+                    totalValue += seller[item];
+                    itemsToSell.push(item);
+                }
+            });
+            
+            if (itemsToSell.length === 0) {
+                print("You have no items that the merchant wants to buy.");
+                return;
+            }
+            
+            state.awaitingConfirmation = 'sell_all';
+            print(`<b>Merchant:</b> "I'll buy all your valuables for ${totalValue} coins total. Deal?"<br><br><span style="color:#888;">Type <b>yes</b> to confirm or <b>no</b> to cancel.</span>`);
+        }
+        else if (raw === 'yes' && state.awaitingConfirmation === 'sell_all') {
+            const coord = `${state.x},${state.y},${state.z}`;
+            const seller = state.sellers[coord];
+            
+            let totalValue = 0;
+            let itemsSold = [];
+            Object.keys(seller).forEach(item => {
+                if (state.inv.includes(item)) {
+                    totalValue += seller[item];
+                    itemsSold.push(item);
+                    state.inv = state.inv.filter(invItem => invItem !== item);
+                }
+            });
+            
+            state.coins += totalValue;
+            state.awaitingConfirmation = null;
+            print(`<span style="color:var(--accent);">✓ Bulk sale complete!</span> You sold ${itemsSold.length} items for <b>${totalValue} coins</b>. Total coins: ${state.coins}.`);
+        }
+        else if (raw === 'no' && state.awaitingConfirmation === 'sell_all') {
+            state.awaitingConfirmation = null;
+            print(`<b>Merchant:</b> "No problem. Let me know if you change your mind."`);
+        }
+        else if (raw.startsWith('sell ')) {
+            const itemName = raw.substring(5).trim();
+            sellItem(itemName);
         }
         else if (raw === 'map' || raw === 'look at map' || raw === 'look map') {
             openMapPopup();
@@ -467,8 +623,28 @@
                 }
             }
         }
+        else if (raw === "use pickaxe" && state.x === 2 && state.y === 3 && state.z === -2 && state.inv.includes("Pickaxe")) {
+            if (!state.worldEvents.rubbleCleared) {
+                state.worldEvents.rubbleCleared = true;
+                print("You swing the pickaxe with practiced strength. The rubble crumbles away, revealing a narrow passage leading deeper into the earth!");
+                world['2,3,-2'].exits.south = '2,4,-2';
+                world['2,3,-2'].desc = "A small alcove with an old mural on the wall. A strange symbol points to somewhere deeper. The rubble has been cleared, revealing a passage to the south.";
+            } else {
+                print("The rubble has already been cleared.");
+            }
+        }
+        else if (raw === "use cart" && state.x === 2 && state.y === 4 && state.z === -2) {
+            print("You position one of the rusty mining carts beneath the hatch and climb onto it. Standing on the cart gives you just enough height to reach the hatch. You push it open and pull yourself up...");
+            state.x = 2; state.y = 4; state.z = 1;
+            world[`${state.x},${state.y},${state.z}`].visited = true;
+            look();
+        }
         else if (['north','south','east','west','up','down'].includes(raw)) {
-            if (room.exits[raw]) {
+            if ((raw === 'down' && state.x === 4 && state.y === 2 && state.z === 1) || (raw === 'down' && state.x === 2 && state.y === 4 && state.z === 1)) {
+                print("<span class='action-msg'>You cannot leave this way. Try another direction.</span>");
+            } else if (raw === 'south' && state.x === 2 && state.y === 4 && state.z === 1) {
+                print("<span class='action-msg'>The terrain slopes dangerously downward to the south. It's too steep and rocky to descend safely.</span>");
+            } else if (room.exits[raw]) {
                 const n = room.exits[raw].split(',');
                 state.x = parseInt(n[0]); state.y = parseInt(n[1]); state.z = parseInt(n[2]);
                 const nextRoom = world[`${state.x},${state.y},${state.z}`];
@@ -493,19 +669,29 @@
                 updateQuest("find_map", "done");
             } else { print("You already have the map."); }
         }
+        else if (raw === "open crate" && state.x === 4 && state.y === 4) {
+            state.worldEvents.crateOpen = true;
+            print("You pry open the iron-banded crate. Inside, carefully preserved, is a bottle of <b>Aged Ale</b> with a label faded by time. This must be what the bartender seeks!");
+        }
+        else if ((raw === "take bottle" || raw === "take ale") && state.x === 4 && state.y === 4 && state.worldEvents.crateOpen) {
+            if (!state.inv.includes("Aged Ale")) {
+                state.inv.push("Aged Ale");
+                print("You carefully extract the <b>Aged Ale</b> from the crate and secure it in your pack.");
+            } else { print("You already have the bottle."); }
+        }
         else if (raw === "talk to elder" && state.x === 2 && state.y === 4) {
             print(`<b>Village Elder:</b> "Welcome to Nature's Edge, ${state.name}. If it is the Tavern you seek, follow the trail North through the Whispering Woods. Once you hit the village square, head East. But beware... the well to the West has been acting strange lately."`);
             state.worldEvents.elderSpoken = true;
             updateQuest("elder", "done");
             updateQuest("tavern", "active");
         }
-        else if (raw === 'enter tavern' && state.x === 4 && state.y === 2 && state.z === 0) {
+        else if (raw === 'enter' && state.x === 4 && state.y === 2 && state.z === 0) {
             state.x = 4; state.y = 2; state.z = 1;
             world[`${state.x},${state.y},${state.z}`].visited = true;
             print(`<span class="room-title">${world[`${state.x},${state.y},${state.z}`].name}</span>${world[`${state.x},${state.y},${state.z}`].desc}`);
             updateQuest('bartender', 'active');
         }
-        else if (raw === 'leave' && state.z === 1) {
+        else if ((raw === 'leave' || raw === 'exit') && state.z === 1) {
             // leave interior rooms and return to surface if possible
             const current = world[`${state.x},${state.y},${state.z}`];
             if (current && current.exits && current.exits.down) {
@@ -517,8 +703,18 @@
             } else { print("You can't leave from here."); }
         }
         else if (raw === 'talk to bartender' && state.x === 4 && state.y === 2 && state.z === 1) {
-            print(`<b>Bartender:</b> "Ah, a new face. I've lost a special cask of aged ale somewhere near the docks. Bring it back and I'll reward you handsomely."`);
-            updateQuest('bartender', 'active');
+            if (state.inv.includes("Aged Ale") && !state.worldEvents.aleDelivered) {
+                state.inv = state.inv.filter(item => item !== "Aged Ale");
+                state.worldEvents.aleDelivered = true;
+                print(`<b>Bartender:</b> "By the spirits, you found it! You are a true hero, ${state.name}. Here, take this as your reward—a purse of 100 gold coins!"`);
+                state.coins += 100;
+                updateQuest('bartender', 'done');
+            } else if (state.worldEvents.aleDelivered) {
+                print(`<b>Bartender:</b> "Thank you again for finding my aged ale. It was worth every coin."`); 
+            } else {
+                print(`<b>Bartender:</b> "Ah, a new face. I've lost a special cask of aged ale somewhere near the docks. Bring it back and I'll reward you handsomely."`);
+                updateQuest('bartender', 'active');
+            }
         }
         else if (raw === "talk to gnome" && state.x === 2 && state.y === 3) {
             print(`<b>Gnome:</b> "Greetings, tiny traveler! If you're looking for rare goods, follow the stair into the well. All the shops below are run by my kin — gnomes with an eye for craft. Visit them and spend your finds wisely.");`);
